@@ -1,0 +1,210 @@
+{
+  "entities": {
+    "UserPublicProfile": {
+      "title": "UserPublicProfile",
+      "description": "Public campus directory profile without PII.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "department": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "role": { "type": "string", "enum": ["student", "faculty", "group_admin", "platform_admin"] },
+        "bio": { "type": "string", "maxLength": 280 },
+        "avatarUrl": { "type": "string", "maxLength": 500 },
+        "publicKeyFingerprint": { "type": "string", "minLength": 8, "maxLength": 64 },
+        "statusMessage": { "type": "string", "maxLength": 100 },
+        "online": { "type": "boolean" },
+        "themePreference": { "type": "string", "enum": ["light", "dark", "system"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "department", "role", "publicKeyFingerprint", "online", "themePreference", "createdAt", "updatedAt"]
+    },
+    "UserPrivateInfo": {
+      "title": "UserPrivateInfo",
+      "description": "Isolated PII and private sync preferences for the user.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 160 },
+        "academicId": { "type": "string", "maxLength": 40 },
+        "offlineSyncEnabled": { "type": "boolean" },
+        "notificationsEnabled": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "offlineSyncEnabled", "notificationsEnabled", "updatedAt"]
+    },
+    "CampusGroup": {
+      "title": "CampusGroup",
+      "description": "Academic subject, project, activity, or 1-to-1 direct collaboration group.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "code": { "type": "string", "minLength": 1, "maxLength": 24 },
+        "description": { "type": "string", "maxLength": 400 },
+        "type": { "type": "string", "enum": ["subject", "project", "activity", "direct"] },
+        "buildingNode": { "type": "string", "minLength": 1, "maxLength": 40 },
+        "creatorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "participantIds": { "type": "array", "description": "Bounded 2-element UID list for 1-to-1 direct messaging threads." },
+        "mlsEpoch": { "type": "number" },
+        "keyFingerprint": { "type": "string", "minLength": 8, "maxLength": 64 },
+        "isPrivate": { "type": "boolean" },
+        "memberCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "name", "code", "type", "buildingNode", "creatorId", "mlsEpoch", "keyFingerprint", "isPrivate", "memberCount", "createdAt", "updatedAt"]
+    },
+    "GroupMember": {
+      "title": "GroupMember",
+      "description": "Membership record inside a campus group.",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "groupRole": { "type": "string", "enum": ["owner", "admin", "member"] },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "displayName", "groupRole", "joinedAt"]
+    },
+    "GroupMessage": {
+      "title": "GroupMessage",
+      "description": "Real-time message in a campus group channel or 1-to-1 direct conversation.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "senderName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "senderRole": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "replyToId": { "type": "string", "maxLength": 128 },
+        "replyPreview": { "type": "string", "maxLength": 140 },
+        "reactions": { "type": "object", "description": "Map of allowlisted reaction keys to bounded UID arrays." },
+        "mlsEpoch": { "type": "number" },
+        "deliveryStatus": { "type": "string", "enum": ["sent", "delivered", "read"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "senderId", "senderName", "senderRole", "content", "mlsEpoch", "deliveryStatus", "createdAt", "updatedAt"]
+    },
+    "AcademicResource": {
+      "title": "AcademicResource",
+      "description": "Shared academic resource metadata linked to a campus group.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 400 },
+        "subject": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "topic": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "resourceType": { "type": "string", "enum": ["lecture_notes", "research_paper", "code_repo", "dataset", "lab_guide"] },
+        "url": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "fileSizeLabel": { "type": "string", "maxLength": 32 },
+        "authorId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "authorName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "downloadsCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "title", "subject", "topic", "resourceType", "url", "authorId", "authorName", "downloadsCount", "createdAt", "updatedAt"]
+    },
+    "GroupInvitation": {
+      "title": "GroupInvitation",
+      "description": "Invitation to join a campus collaboration group.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "inviterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "inviterName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "inviteeId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "status": { "type": "string", "enum": ["pending", "accepted", "declined"] },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "groupName", "inviterId", "inviterName", "inviteeId", "status", "createdAt", "updatedAt"]
+    },
+    "ModerationReport": {
+      "title": "ModerationReport",
+      "description": "Message moderation report submitted by a channel member for platform administrator review.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "groupCode": { "type": "string", "minLength": 1, "maxLength": 24 },
+        "messageId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "messagePreview": { "type": "string", "minLength": 1, "maxLength": 280 },
+        "reportedUserId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reportedUserName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "reporterId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "reporterName": { "type": "string", "minLength": 1, "maxLength": 80 },
+        "reason": { "type": "string", "enum": ["spam", "harassment", "academic_integrity", "inappropriate"] },
+        "details": { "type": "string", "maxLength": 300 },
+        "status": { "type": "string", "enum": ["open", "resolved", "dismissed"] },
+        "resolvedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "groupId", "groupCode", "messageId", "messagePreview", "reportedUserId", "reportedUserName", "reporterId", "reporterName", "reason", "status", "createdAt", "updatedAt"]
+    },
+    "EngagementEvent": {
+      "title": "EngagementEvent",
+      "description": "User engagement metric event for analytics tracking.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "minLength": 1, "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userRole": { "type": "string", "minLength": 1, "maxLength": 30 },
+        "eventType": { "type": "string", "enum": ["message_sent", "resource_shared", "resource_downloaded", "channel_joined", "profile_updated", "campus_3d_inspected", "offline_sync_flushed", "dm_started", "moderation_reported", "announcement_posted"] },
+        "groupId": { "type": "string", "maxLength": 128 },
+        "department": { "type": "string", "maxLength": 80 },
+        "latencyMs": { "type": "number" },
+        "wasOffline": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "userRole", "eventType", "latencyMs", "wasOffline", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/usersPublic/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublicProfile" },
+      "description": "Public campus directory profiles."
+    },
+    "/usersPrivate/{userId}": {
+      "schema": { "$ref": "#/entities/UserPrivateInfo" },
+      "description": "Private PII and user preferences."
+    },
+    "/groups/{groupId}": {
+      "schema": { "$ref": "#/entities/CampusGroup" },
+      "description": "Campus collaboration groups, channels, and 1-to-1 direct threads."
+    },
+    "/groups/{groupId}/members/{memberId}": {
+      "schema": { "$ref": "#/entities/GroupMember" },
+      "description": "Group membership roster and roles."
+    },
+    "/groups/{groupId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/GroupMessage" },
+      "description": "Persisted messages inside a group channel or direct thread."
+    },
+    "/groups/{groupId}/resources/{resourceId}": {
+      "schema": { "$ref": "#/entities/AcademicResource" },
+      "description": "Academic resources shared within a group."
+    },
+    "/invitations/{invitationId}": {
+      "schema": { "$ref": "#/entities/GroupInvitation" },
+      "description": "Pending and resolved group invitations."
+    },
+    "/moderationReports/{reportId}": {
+      "schema": { "$ref": "#/entities/ModerationReport" },
+      "description": "Reported messages awaiting platform administrator review."
+    },
+    "/analyticsEvents/{eventId}": {
+      "schema": { "$ref": "#/entities/EngagementEvent" },
+      "description": "User engagement events for real-time analytics."
+    }
+  }
+}

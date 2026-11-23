@@ -1,0 +1,6 @@
+{
+  "name": "Campus Connect",
+  "description": "Academic Zero-Trust Collaboration Platform for real-time campus messaging, resource sharing, 3D topology exploration, offline-first profile sync, and engagement analytics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

@@ -1,0 +1,518 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // === Global Hardened Primitives ===
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    function isBootstrappedAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'aakarsh.singh8c@gmail.com';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        isBootstrappedAdmin() ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isGroupMember(groupId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid));
+    }
+
+    function isGroupAdmin(groupId) {
+      return isSignedIn() && (
+        isAdmin() ||
+        (
+          exists(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)) &&
+          get(/databases/$(database)/documents/groups/$(groupId)/members/$(request.auth.uid)).data.groupRole in ['owner', 'admin']
+        )
+      );
+    }
+
+    function isValidReactionList(val) {
+      return val is list && val.size() <= 50 && (val.size() == 0 || (val[0] is string && isValidId(val[0])));
+    }
+
+    function isValidReactionsMap(reactions) {
+      return reactions is map
+        && reactions.keys().hasOnly(['thumbs_up', 'heart', 'target', 'fire', 'bulb'])
+        && (!('thumbs_up' in reactions) || isValidReactionList(reactions.thumbs_up))
+        && (!('heart' in reactions) || isValidReactionList(reactions.heart))
+        && (!('target' in reactions) || isValidReactionList(reactions.target))
+        && (!('fire' in reactions) || isValidReactionList(reactions.fire))
+        && (!('bulb' in reactions) || isValidReactionList(reactions.bulb));
+    }
+
+    // === Entity Validation Blueprints ===
+    function isValidUserPublic(data, userId) {
+      return data.keys().hasAll(['uid', 'displayName', 'department', 'role', 'publicKeyFingerprint', 'online', 'themePreference', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'department', 'role', 'bio', 'avatarUrl', 'publicKeyFingerprint', 'statusMessage', 'online', 'themePreference', 'createdAt', 'updatedAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.department is string && data.department.size() >= 1 && data.department.size() <= 80
+        && data.role in ['student', 'faculty', 'group_admin', 'platform_admin']
+        && (!('bio' in data) || (data.bio is string && data.bio.size() <= 280))
+        && (!('avatarUrl' in data) || (data.avatarUrl is string && data.avatarUrl.size() <= 500))
+        && data.publicKeyFingerprint is string && data.publicKeyFingerprint.size() >= 8 && data.publicKeyFingerprint.size() <= 64
+        && (!('statusMessage' in data) || (data.statusMessage is string && data.statusMessage.size() <= 100))
+        && data.online is bool
+        && data.themePreference in ['light', 'dark', 'system']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivate(data, userId) {
+      return data.keys().hasAll(['uid', 'email', 'offlineSyncEnabled', 'notificationsEnabled', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'academicId', 'offlineSyncEnabled', 'notificationsEnabled', 'updatedAt'])
+        && data.uid is string && data.uid == userId && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 160
+        && (!('academicId' in data) || (data.academicId is string && data.academicId.size() <= 40))
+        && data.offlineSyncEnabled is bool
+        && data.notificationsEnabled is bool
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroup(data, groupId) {
+      return data.keys().hasAll(['id', 'name', 'code', 'type', 'buildingNode', 'creatorId', 'mlsEpoch', 'keyFingerprint', 'isPrivate', 'memberCount', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'code', 'description', 'type', 'buildingNode', 'creatorId', 'participantIds', 'mlsEpoch', 'keyFingerprint', 'isPrivate', 'memberCount', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == groupId && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+        && data.code is string && data.code.size() >= 1 && data.code.size() <= 24
+        && (!('description' in data) || (data.description is string && data.description.size() <= 400))
+        && data.type in ['subject', 'project', 'activity', 'direct']
+        && data.buildingNode is string && data.buildingNode.size() >= 1 && data.buildingNode.size() <= 40
+        && data.creatorId is string && isValidId(data.creatorId)
+        && (!('participantIds' in data) || (data.type == 'direct' && data.participantIds is list && data.participantIds.size() <= 2 && (data.participantIds.size() == 0 || (data.participantIds[0] is string && isValidId(data.participantIds[0])))))
+        && data.mlsEpoch is number && data.mlsEpoch >= 1
+        && data.keyFingerprint is string && data.keyFingerprint.size() >= 8 && data.keyFingerprint.size() <= 64
+        && data.isPrivate is bool
+        && data.memberCount is number && data.memberCount >= 0 && data.memberCount <= 10000
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidGroupMember(data, memberId) {
+      return data.keys().hasAll(['uid', 'displayName', 'groupRole', 'joinedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'groupRole', 'joinedAt'])
+        && data.uid is string && data.uid == memberId && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 80
+        && data.groupRole in ['owner', 'admin', 'member']
+        && data.joinedAt is timestamp;
+    }
+
+    function isValidMessage(data, groupId, messageId) {
+      return data.keys().hasAll(['id', 'groupId', 'senderId', 'senderName', 'senderRole', 'content', 'mlsEpoch', 'deliveryStatus', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'senderId', 'senderName', 'senderRole', 'content', 'replyToId', 'replyPreview', 'reactions', 'mlsEpoch', 'deliveryStatus', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == messageId && isValidId(data.id)
+        && data.groupId is string && data.groupId == groupId && isValidId(data.groupId)
+        && data.senderId is string && isValidId(data.senderId)
+        && data.senderName is string && data.senderName.size() >= 1 && data.senderName.size() <= 80
+        && data.senderRole is string && data.senderRole.size() >= 1 && data.senderRole.size() <= 30
+        && data.content is string && data.content.size() >= 1 && data.content.size() <= 2000
+        && (!('replyToId' in data) || (data.replyToId is string && data.replyToId.size() <= 128))
+        && (!('replyPreview' in data) || (data.replyPreview is string && data.replyPreview.size() <= 140))
+        && (!('reactions' in data) || isValidReactionsMap(data.reactions))
+        && data.mlsEpoch is number && data.mlsEpoch >= 1
+        && data.deliveryStatus in ['sent', 'delivered', 'read']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidResource(data, groupId, resourceId) {
+      return data.keys().hasAll(['id', 'groupId', 'title', 'subject', 'topic', 'resourceType', 'url', 'authorId', 'authorName', 'downloadsCount', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'title', 'description', 'subject', 'topic', 'resourceType', 'url', 'fileSizeLabel', 'authorId', 'authorName', 'downloadsCount', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == resourceId && isValidId(data.id)
+        && data.groupId is string && data.groupId == groupId && isValidId(data.groupId)
+        && data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+        && (!('description' in data) || (data.description is string && data.description.size() <= 400))
+        && data.subject is string && data.subject.size() >= 1 && data.subject.size() <= 60
+        && data.topic is string && data.topic.size() >= 1 && data.topic.size() <= 60
+        && data.resourceType in ['lecture_notes', 'research_paper', 'code_repo', 'dataset', 'lab_guide']
+        && data.url is string && data.url.size() >= 1 && data.url.size() <= 500
+        && (!('fileSizeLabel' in data) || (data.fileSizeLabel is string && data.fileSizeLabel.size() <= 32))
+        && data.authorId is string && isValidId(data.authorId)
+        && data.authorName is string && data.authorName.size() >= 1 && data.authorName.size() <= 80
+        && data.downloadsCount is number && data.downloadsCount >= 0
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidInvitation(data, invitationId) {
+      return data.keys().hasAll(['id', 'groupId', 'groupName', 'inviterId', 'inviterName', 'inviteeId', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'groupName', 'inviterId', 'inviterName', 'inviteeId', 'status', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == invitationId && isValidId(data.id)
+        && data.groupId is string && isValidId(data.groupId)
+        && data.groupName is string && data.groupName.size() >= 1 && data.groupName.size() <= 80
+        && data.inviterId is string && isValidId(data.inviterId)
+        && data.inviterName is string && data.inviterName.size() >= 1 && data.inviterName.size() <= 80
+        && data.inviteeId is string && isValidId(data.inviteeId)
+        && data.status in ['pending', 'accepted', 'declined']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidModerationReport(data, reportId) {
+      return data.keys().hasAll(['id', 'groupId', 'groupCode', 'messageId', 'messagePreview', 'reportedUserId', 'reportedUserName', 'reporterId', 'reporterName', 'reason', 'status', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'groupId', 'groupCode', 'messageId', 'messagePreview', 'reportedUserId', 'reportedUserName', 'reporterId', 'reporterName', 'reason', 'details', 'status', 'resolvedBy', 'createdAt', 'updatedAt'])
+        && data.id is string && data.id == reportId && isValidId(data.id)
+        && data.groupId is string && isValidId(data.groupId)
+        && data.groupCode is string && data.groupCode.size() >= 1 && data.groupCode.size() <= 24
+        && data.messageId is string && isValidId(data.messageId)
+        && data.messagePreview is string && data.messagePreview.size() >= 1 && data.messagePreview.size() <= 280
+        && data.reportedUserId is string && isValidId(data.reportedUserId)
+        && data.reportedUserName is string && data.reportedUserName.size() >= 1 && data.reportedUserName.size() <= 80
+        && data.reporterId is string && isValidId(data.reporterId)
+        && data.reporterName is string && data.reporterName.size() >= 1 && data.reporterName.size() <= 80
+        && data.reason in ['spam', 'harassment', 'academic_integrity', 'inappropriate']
+        && (!('details' in data) || (data.details is string && data.details.size() <= 300))
+        && data.status in ['open', 'resolved', 'dismissed']
+        && (!('resolvedBy' in data) || (data.resolvedBy is string && data.resolvedBy.size() <= 128))
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAnalyticsEvent(data, eventId) {
+      return data.keys().hasAll(['id', 'userId', 'userRole', 'eventType', 'latencyMs', 'wasOffline', 'createdAt'])
+        && data.keys().hasOnly(['id', 'userId', 'userRole', 'eventType', 'groupId', 'department', 'latencyMs', 'wasOffline', 'createdAt'])
+        && data.id is string && data.id == eventId && isValidId(data.id)
+        && data.userId is string && isValidId(data.userId)
+        && data.userRole is string && data.userRole.size() >= 1 && data.userRole.size() <= 30
+        && data.eventType in ['message_sent', 'resource_shared', 'resource_downloaded', 'channel_joined', 'profile_updated', 'campus_3d_inspected', 'offline_sync_flushed', 'dm_started', 'moderation_reported', 'announcement_posted']
+        && (!('groupId' in data) || (data.groupId is string && data.groupId.size() <= 128))
+        && (!('department' in data) || (data.department is string && data.department.size() <= 80))
+        && data.latencyMs is number && data.latencyMs >= 0 && data.latencyMs <= 60000
+        && data.wasOffline is bool
+        && data.createdAt is timestamp;
+    }
+
+    // === Admins ===
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // === Public Campus Directory Profiles (No PII) ===
+    match /usersPublic/{userId} {
+      allow get: if isValidId(userId) && isSignedIn();
+      allow list: if isSignedIn() && resource.data.role in ['student', 'faculty', 'group_admin', 'platform_admin'];
+      allow create: if isValidId(userId)
+        && isVerifiedUser()
+        && isValidUserPublic(incoming(), userId)
+        && isOwner(userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (incoming().role == 'student' || isAdmin());
+      allow update: if isValidId(userId)
+        && isVerifiedUser()
+        && isValidUserPublic(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            isOwner(userId)
+            && incoming().role == existing().role
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'department', 'bio', 'avatarUrl', 'publicKeyFingerprint', 'statusMessage', 'online', 'themePreference', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // === Isolated Private User Info (PII) ===
+    match /usersPrivate/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if isValidId(userId)
+        && isVerifiedUser()
+        && isValidUserPrivate(incoming(), userId)
+        && isOwner(userId)
+        && incoming().updatedAt == request.time;
+      allow update: if isValidId(userId)
+        && isVerifiedUser()
+        && isValidUserPrivate(incoming(), userId)
+        && incoming().uid == existing().uid
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            isOwner(userId)
+            && incoming().email == existing().email
+            && incoming().diff(existing()).affectedKeys().hasOnly(['academicId', 'offlineSyncEnabled', 'notificationsEnabled', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(userId) && (isOwner(userId) || isAdmin());
+    }
+
+    // === Campus Groups, Channels, & 1-to-1 Direct Threads ===
+    match /groups/{groupId} {
+      allow get: if isValidId(groupId) && isSignedIn() && (
+        existing().isPrivate == false ||
+        isGroupMember(groupId) ||
+        (existing().type == 'direct' && 'participantIds' in existing() && request.auth.uid in existing().participantIds) ||
+        isAdmin()
+      );
+      allow list: if isSignedIn() && (
+        resource.data.isPrivate == false ||
+        resource.data.creatorId == request.auth.uid ||
+        request.auth.uid in resource.data.participantIds ||
+        isAdmin()
+      );
+      allow create: if isValidId(groupId)
+        && isVerifiedUser()
+        && isValidGroup(incoming(), groupId)
+        && incoming().creatorId == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (incoming().type != 'direct' || ('participantIds' in incoming() && incoming().participantIds.size() == 2 && request.auth.uid in incoming().participantIds));
+      allow update: if isValidId(groupId)
+        && isVerifiedUser()
+        && isValidGroup(incoming(), groupId)
+        && incoming().id == existing().id
+        && incoming().creatorId == existing().creatorId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            isGroupAdmin(groupId) &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['name', 'description', 'mlsEpoch', 'keyFingerprint', 'isPrivate', 'memberCount', 'updatedAt'])
+          ) ||
+          (
+            existing().isPrivate == false &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['memberCount', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(groupId) && (isAdmin() || isGroupAdmin(groupId));
+
+      // Group Members Subcollection (Supports atomic writeBatch via existsAfter/getAfter)
+      match /members/{memberId} {
+        allow get: if isValidId(groupId) && isValidId(memberId) && isSignedIn() && (isGroupMember(groupId) || isOwner(memberId) || isAdmin());
+        allow list: if isSignedIn() && (resource.data.uid == request.auth.uid || isGroupMember(groupId) || isAdmin());
+        allow create: if isValidId(groupId) && isValidId(memberId)
+          && isVerifiedUser()
+          && existsAfter(/databases/$(database)/documents/groups/$(groupId))
+          && isValidGroupMember(incoming(), memberId)
+          && incoming().joinedAt == request.time
+          && (
+            isAdmin() ||
+            (
+              isOwner(memberId) &&
+              getAfter(/databases/$(database)/documents/groups/$(groupId)).data.creatorId == request.auth.uid &&
+              incoming().groupRole == 'owner'
+            ) ||
+            (
+              getAfter(/databases/$(database)/documents/groups/$(groupId)).data.type == 'direct' &&
+              getAfter(/databases/$(database)/documents/groups/$(groupId)).data.creatorId == request.auth.uid &&
+              incoming().groupRole == 'member' &&
+              memberId in getAfter(/databases/$(database)/documents/groups/$(groupId)).data.participantIds
+            ) ||
+            (
+              isOwner(memberId) &&
+              getAfter(/databases/$(database)/documents/groups/$(groupId)).data.isPrivate == false &&
+              incoming().groupRole == 'member'
+            ) ||
+            (
+              isOwner(memberId) &&
+              incoming().groupRole == 'member' &&
+              existsAfter(/databases/$(database)/documents/invitations/$(groupId + '_' + request.auth.uid)) &&
+              getAfter(/databases/$(database)/documents/invitations/$(groupId + '_' + request.auth.uid)).data.status == 'accepted'
+            ) ||
+            (
+              isGroupAdmin(groupId) &&
+              incoming().groupRole in ['admin', 'member']
+            )
+          );
+        allow update: if isValidId(groupId) && isValidId(memberId)
+          && isVerifiedUser()
+          && isValidGroupMember(incoming(), memberId)
+          && incoming().uid == existing().uid
+          && incoming().joinedAt == existing().joinedAt
+          && (isAdmin() || isGroupAdmin(groupId))
+          && incoming().diff(existing()).affectedKeys().hasOnly(['groupRole', 'displayName']);
+        allow delete: if isValidId(groupId) && isValidId(memberId)
+          && isVerifiedUser()
+          && (isOwner(memberId) || isGroupAdmin(groupId) || isAdmin());
+      }
+
+      // Group Messages Subcollection (Master Gate)
+      match /messages/{messageId} {
+        allow get: if isValidId(groupId) && isValidId(messageId) && (isGroupMember(groupId) || isAdmin());
+        allow list: if isSignedIn() && (isGroupMember(groupId) || isAdmin());
+        allow create: if isValidId(groupId) && isValidId(messageId)
+          && isVerifiedUser()
+          && isValidMessage(incoming(), groupId, messageId)
+          && incoming().senderId == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && (isGroupMember(groupId) || isAdmin());
+        allow update: if isValidId(groupId) && isValidId(messageId)
+          && isVerifiedUser()
+          && isValidMessage(incoming(), groupId, messageId)
+          && incoming().id == existing().id
+          && incoming().groupId == existing().groupId
+          && incoming().senderId == existing().senderId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isAdmin() ||
+            (
+              isGroupMember(groupId) &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['deliveryStatus', 'updatedAt'])
+            ) ||
+            (
+              isGroupMember(groupId) &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['reactions', 'updatedAt'])
+            ) ||
+            (
+              isGroupMember(groupId) &&
+              existing().senderId == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['content', 'updatedAt'])
+            )
+          );
+        allow delete: if isValidId(groupId) && isValidId(messageId)
+          && isVerifiedUser()
+          && (existing().senderId == request.auth.uid || isGroupAdmin(groupId) || isAdmin());
+      }
+
+      // Academic Resources Subcollection (Master Gate)
+      match /resources/{resourceId} {
+        allow get: if isValidId(groupId) && isValidId(resourceId) && (isGroupMember(groupId) || isAdmin());
+        allow list: if isSignedIn() && (isGroupMember(groupId) || isAdmin());
+        allow create: if isValidId(groupId) && isValidId(resourceId)
+          && isVerifiedUser()
+          && isValidResource(incoming(), groupId, resourceId)
+          && incoming().authorId == request.auth.uid
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && (isGroupMember(groupId) || isAdmin());
+        allow update: if isValidId(groupId) && isValidId(resourceId)
+          && isVerifiedUser()
+          && isValidResource(incoming(), groupId, resourceId)
+          && incoming().id == existing().id
+          && incoming().groupId == existing().groupId
+          && incoming().authorId == existing().authorId
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && (
+            isAdmin() ||
+            (
+              isGroupMember(groupId) &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['downloadsCount', 'updatedAt'])
+            ) ||
+            (
+              (existing().authorId == request.auth.uid || isGroupAdmin(groupId)) &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['title', 'description', 'subject', 'topic', 'resourceType', 'url', 'fileSizeLabel', 'updatedAt'])
+            )
+          );
+        allow delete: if isValidId(groupId) && isValidId(resourceId)
+          && isVerifiedUser()
+          && (existing().authorId == request.auth.uid || isGroupAdmin(groupId) || isAdmin());
+      }
+    }
+
+    // === Group Invitations (Terminal State Locking) ===
+    match /invitations/{invitationId} {
+      allow get: if isValidId(invitationId) && isSignedIn() && (existing().inviteeId == request.auth.uid || existing().inviterId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.inviteeId == request.auth.uid || resource.data.inviterId == request.auth.uid || isAdmin());
+      allow create: if isValidId(invitationId)
+        && isVerifiedUser()
+        && isValidInvitation(incoming(), invitationId)
+        && incoming().inviterId == request.auth.uid
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/groups/$(incoming().groupId))
+        && (isGroupAdmin(incoming().groupId) || isGroupMember(incoming().groupId) || isAdmin());
+      allow update: if isValidId(invitationId)
+        && isVerifiedUser()
+        && isValidInvitation(incoming(), invitationId)
+        && existing().status == 'pending'
+        && incoming().id == existing().id
+        && incoming().groupId == existing().groupId
+        && incoming().inviterId == existing().inviterId
+        && incoming().inviteeId == existing().inviteeId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            existing().inviteeId == request.auth.uid &&
+            incoming().status in ['accepted', 'declined'] &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(invitationId) && (existing().inviterId == request.auth.uid || isAdmin());
+    }
+
+    // === Message Moderation Reports (Terminal State Locking) ===
+    match /moderationReports/{reportId} {
+      allow get: if isValidId(reportId) && isSignedIn() && (existing().reporterId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.reporterId == request.auth.uid || isAdmin());
+      allow create: if isValidId(reportId)
+        && isVerifiedUser()
+        && isValidModerationReport(incoming(), reportId)
+        && incoming().reporterId == request.auth.uid
+        && incoming().status == 'open'
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && exists(/databases/$(database)/documents/groups/$(incoming().groupId))
+        && (isGroupMember(incoming().groupId) || isAdmin());
+      allow update: if isValidId(reportId)
+        && isVerifiedUser()
+        && isValidModerationReport(incoming(), reportId)
+        && existing().status == 'open'
+        && incoming().id == existing().id
+        && incoming().groupId == existing().groupId
+        && incoming().messageId == existing().messageId
+        && incoming().reporterId == existing().reporterId
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && isAdmin()
+        && incoming().status in ['resolved', 'dismissed']
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'resolvedBy', 'updatedAt']);
+      allow delete: if isValidId(reportId) && isAdmin();
+    }
+
+    // === Engagement Analytics Events ===
+    match /analyticsEvents/{eventId} {
+      allow get: if isValidId(eventId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(eventId)
+        && isVerifiedUser()
+        && isValidAnalyticsEvent(incoming(), eventId)
+        && incoming().userId == request.auth.uid
+        && incoming().createdAt == request.time;
+      allow update: if false;
+      allow delete: if isValidId(eventId) && isAdmin();
+    }
+  }
+}
